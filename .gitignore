@@ -1,0 +1,5 @@
+# Don't commit secrets or generated files
+.env
+__pycache__/
+*.pyc
+downloads/

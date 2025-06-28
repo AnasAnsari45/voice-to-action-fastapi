@@ -1,70 +1,60 @@
-# from fastapi import FastAPI, Request
-# from fastapi.responses import PlainTextResponse, JSONResponse
-
-# app = FastAPI()
-
- VERIFY_TOKEN = "voiceaction123"  # Match this in Meta webhook form
-
-# @app.get("/webhook")
-# async def verify(request: Request):
-#     params = dict(request.query_params)
-#     if params.get("hub.mode") == "subscribe" and params.get("hub.verify_token") == VERIFY_TOKEN:
-#         return PlainTextResponse(content=params["hub.challenge"])
-#     return PlainTextResponse("Verification failed", status_code=403)
-
-# @app.post("/webhook")
-# async def webhook(request: Request):
-#     data = await request.json()
-#     print("📩 Incoming WhatsApp message:", data)
-#     return JSONResponse({"status": "received"})
-
-
-
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+import requests
+import subprocess
+import os
+from dotenv import load_dotenv
+import openai
+
+# 🔐 Load secrets from .env
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
+WABA_TOKEN = os.getenv("WABA_TOKEN")
+MEDIA_DOWNLOAD_DIR = "downloads"
+os.makedirs(MEDIA_DOWNLOAD_DIR, exist_ok=True)
 
 app = FastAPI()
 
-# @app.post("/webhook")
-# async def webhook(request: Request):
-#     data = await request.json()
-#     print("📩 Full incoming payload:", data)
+# =======================
+# 🔧 Helper Functions
+# =======================
+def get_media_url(media_id):
+    url = f"https://graph.facebook.com/v18.0/{media_id}"
+    headers = {"Authorization": f"Bearer {WABA_TOKEN}"}
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response.json()["url"]
 
-#     try:
-#         # Step 1: Access message
-#         entry = data["entry"][0]
-#         change = entry["changes"][0]
-#         value = change["value"]
-#         messages = value.get("messages", [])
+def download_media_file(media_url, filename="voice_note.ogg"):
+    headers = {"Authorization": f"Bearer {WABA_TOKEN}"}
+    response = requests.get(media_url, headers=headers)
+    response.raise_for_status()
+    path = os.path.join(MEDIA_DOWNLOAD_DIR, filename)
+    with open(path, "wb") as f:
+        f.write(response.content)
+    return path
 
-#         if messages:
-#             message = messages[0]
-#             msg_type = message["type"]
-#             sender = message["from"]
+def convert_ogg_to_wav(input_path, output_path):
+    command = ["ffmpeg", "-y", "-i", input_path, output_path]
+    subprocess.run(command, check=True)
+    return output_path
 
-#             print(f"📨 New message from {sender}, type: {msg_type}")
+def transcribe_with_whisper(file_path):
+    with open(file_path, "rb") as audio_file:
+        transcript = openai.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            response_format="text"
+        )
+    return transcript
 
-#             if msg_type == "audio":
-#                 media_id = message["audio"]["id"]
-#                 print(f"🎧 Voice note received — Media ID: {media_id}")
-
-#             elif msg_type == "text":
-#                 text = message["text"]["body"]
-#                 print(f"💬 Text message: {text}")
-
-#         else:
-#             print("⚠️ No messages in payload.")
-
-#     except Exception as e:
-#         print("❌ Error while processing message:", e)
-
-#     return JSONResponse(content={"status": "received"})
-
-
+# =======================
+# 🌐 Webhook Endpoint
+# =======================
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
-    print("📩 Incoming WhatsApp message:", data)
+    print("\U0001f4e9 Incoming WhatsApp message:", data)
 
     try:
         entry = data["entry"][0]
@@ -76,19 +66,30 @@ async def webhook(request: Request):
             message = messages[0]
             msg_type = message["type"]
             sender = message["from"]
-            phone_number_id = value["metadata"]["phone_number_id"]
 
             if msg_type == "text":
                 text = message["text"]["body"]
-                print(f"💬 Text message from {sender}: {text}")
+                print(f"💬 Text from {sender}: {text}")
 
             elif msg_type == "audio":
                 media_id = message["audio"]["id"]
-                print(f"🎧 Voice message received from {sender} — Media ID: {media_id}")
-                # Step 2: download this media_id next
+                print(f"🎧 Voice from {sender} — Media ID: {media_id}")
+
+                media_url = get_media_url(media_id)
+                ogg_path = download_media_file(media_url)
+                print("📥 Downloaded OGG:", ogg_path)
+
+                wav_path = os.path.splitext(ogg_path)[0] + ".wav"
+                convert_ogg_to_wav(ogg_path, wav_path)
+                print("🎵 Converted to WAV:", wav_path)
+
+                transcript = transcribe_with_whisper(wav_path)
+                print("📝 Transcription:", transcript)
 
     except Exception as e:
-        print("❌ Error while processing message:", e)
+        print("❌ Webhook error:", e)
 
     return JSONResponse({"status": "received"})
 
+# print("🔐 OpenAI Key (last 5):", openai.api_key[-5:])
+# print("🔐 WABA Token (last 5):", WABA_TOKEN[-5:])

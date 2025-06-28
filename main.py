@@ -41,7 +41,7 @@ def convert_ogg_to_wav(input_path, output_path):
 
 def transcribe_with_whisper(file_path):
     with open(file_path, "rb") as audio_file:
-        transcript = openai.audio.transcriptions.create(
+        transcript = openai.audio.translations.create(
             model="whisper-1",
             file=audio_file,
             response_format="text"

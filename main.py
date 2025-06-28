@@ -39,14 +39,29 @@ def convert_ogg_to_wav(input_path, output_path):
     subprocess.run(command, check=True)
     return output_path
 
+# def transcribe_with_whisper(file_path):
+#     with open(file_path, "rb") as audio_file:
+#         transcript = openai.audio.translations.create(
+#             model="whisper-1",
+#             file=audio_file,
+#             response_format="text"
+#         )
+#     return transcript
+
 def transcribe_with_whisper(file_path):
-    with open(file_path, "rb") as audio_file:
-        transcript = openai.audio.translations.create(
-            model="whisper-1",
-            file=audio_file,
-            response_format="text"
-        )
-    return transcript
+    try:
+        with open(file_path, "rb") as audio_file:
+            transcript = openai.audio.translations.create(
+                model="whisper-1",
+                file=audio_file,
+                response_format="text"
+            )
+        print("📝 Transcription successful:", transcript)
+        return transcript
+    except Exception as e:
+        print("❌ Whisper API failed:", e)
+        return None
+
 
 # =======================
 # 🌐 Webhook Endpoint
@@ -83,8 +98,12 @@ async def webhook(request: Request):
                 convert_ogg_to_wav(ogg_path, wav_path)
                 print("🎵 Converted to WAV:", wav_path)
 
-                transcript = transcribe_with_whisper(wav_path)
-                print("📝 Transcription:", transcript)
+                # transcript = transcribe_with_whisper(wav_path)
+                # print("📝 Transcription:", transcript)
+                print("🧠 Starting transcription...")
+                transcription = transcribe_with_whisper(wav_path)
+                print("🧠 Transcription output:", transcription)
+
 
     except Exception as e:
         print("❌ Webhook error:", e)

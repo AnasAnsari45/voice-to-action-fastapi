@@ -3,22 +3,29 @@ from fastapi.responses import JSONResponse
 import requests
 import subprocess
 import os
+import json  # Required for parsing Hugging Face response
 from dotenv import load_dotenv
 import openai
 
-# 🔐 Load secrets from .env
+# 🔐 Load secrets from .env file
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 WABA_TOKEN = os.getenv("WABA_TOKEN")
+HF_API_TOKEN = os.getenv("HF_API_TOKEN")
+HF_MODEL_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct"
+
+# 📁 Media download directory
 MEDIA_DOWNLOAD_DIR = "downloads"
 os.makedirs(MEDIA_DOWNLOAD_DIR, exist_ok=True)
 
 app = FastAPI()
 
-# =======================
-# 🔧 Helper Functions
-# =======================
+# ========================
+# 🔧 Utility Functions
+# ========================
+
 def get_media_url(media_id):
+    """Fetch media download URL from WhatsApp API using media_id"""
     url = f"https://graph.facebook.com/v18.0/{media_id}"
     headers = {"Authorization": f"Bearer {WABA_TOKEN}"}
     response = requests.get(url, headers=headers)
@@ -26,6 +33,7 @@ def get_media_url(media_id):
     return response.json()["url"]
 
 def download_media_file(media_url, filename="voice_note.ogg"):
+    """Download audio file from WhatsApp to local storage"""
     headers = {"Authorization": f"Bearer {WABA_TOKEN}"}
     response = requests.get(media_url, headers=headers)
     response.raise_for_status()
@@ -35,20 +43,13 @@ def download_media_file(media_url, filename="voice_note.ogg"):
     return path
 
 def convert_ogg_to_wav(input_path, output_path):
+    """Convert OGG audio to WAV using ffmpeg"""
     command = ["ffmpeg", "-y", "-i", input_path, output_path]
     subprocess.run(command, check=True)
     return output_path
 
-# def transcribe_with_whisper(file_path):
-#     with open(file_path, "rb") as audio_file:
-#         transcript = openai.audio.translations.create(
-#             model="whisper-1",
-#             file=audio_file,
-#             response_format="text"
-#         )
-#     return transcript
-
 def transcribe_with_whisper(file_path):
+    """Use OpenAI Whisper to transcribe multilingual audio"""
     try:
         with open(file_path, "rb") as audio_file:
             transcript = openai.audio.translations.create(
@@ -62,14 +63,48 @@ def transcribe_with_whisper(file_path):
         print("❌ Whisper API failed:", e)
         return None
 
+def structure_transcription(text):
+    """Call Hugging Face model to structure text into JSON"""
+    prompt = f"""
+    Extract structured information from this report and return as JSON:
+    ---
+    Report: "{text}"
+    ---
+    Format:
+    {{
+      "agent_name": "",
+      "store_or_location": "",
+      "product_issues": [],
+      "equipment_issues": [],
+      "complaints_or_requests": [],
+      "misc": []
+    }}
+    """
+    headers = {
+        "Authorization": f"Bearer {HF_API_TOKEN}",
+        "Content-Type": "application/json"
+    }
 
-# =======================
-# 🌐 Webhook Endpoint
-# =======================
+    response = requests.post(HF_MODEL_URL, headers=headers, json={"inputs": prompt})
+    if response.status_code == 200:
+        output = response.json()
+        try:
+            return json.loads(output[0]["generated_text"].split("```")[0])  # removes Markdown backticks
+        except Exception as e:
+            print("⚠️ Failed to parse structured response:", e)
+            return output[0]["generated_text"]
+    else:
+        print("❌ Hugging Face API error:", response.text)
+        return {"error": response.text}
+
+# ========================
+# 🌐 WhatsApp Webhook
+# ========================
+
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
-    print("\U0001f4e9 Incoming WhatsApp message:", data)
+    print("📩 Incoming WhatsApp message:", data)
 
     try:
         entry = data["entry"][0]
@@ -90,6 +125,7 @@ async def webhook(request: Request):
                 media_id = message["audio"]["id"]
                 print(f"🎧 Voice from {sender} — Media ID: {media_id}")
 
+                # 🔽 Download & Convert
                 media_url = get_media_url(media_id)
                 ogg_path = download_media_file(media_url)
                 print("📥 Downloaded OGG:", ogg_path)
@@ -98,17 +134,19 @@ async def webhook(request: Request):
                 convert_ogg_to_wav(ogg_path, wav_path)
                 print("🎵 Converted to WAV:", wav_path)
 
-                # transcript = transcribe_with_whisper(wav_path)
-                # print("📝 Transcription:", transcript)
+                # 🧠 Transcribe
                 print("🧠 Starting transcription...")
                 transcription = transcribe_with_whisper(wav_path)
                 print("🧠 Transcription output:", transcription)
 
+                # 🧩 Structure into JSON
+                if transcription:
+                    structured_data = structure_transcription(transcription)
+                    print("📦 Structured Output:", structured_data)
+                else:
+                    print("⚠️ Skipping structuring due to failed transcription")
 
     except Exception as e:
         print("❌ Webhook error:", e)
 
     return JSONResponse({"status": "received"})
-
-# print("🔐 OpenAI Key (last 5):", openai.api_key[-5:])
-# print("🔐 WABA Token (last 5):", WABA_TOKEN[-5:])

@@ -65,8 +65,44 @@ def transcribe_with_whisper(file_path):
         print("❌ Whisper API failed:", e)
         return None
 
+# def structure_transcription(text):
+#     """Call Hugging Face model to structure text into JSON"""
+#     prompt = f"""
+#     Extract structured information from this report and return as JSON:
+#     ---
+#     Report: "{text}"
+#     ---
+#     Format:
+#     {{
+#       "agent_name": "",
+#       "store_or_location": "",
+#       "product_issues": [],
+#       "equipment_issues": [],
+#       "complaints_or_requests": [],
+#       "misc": []
+#     }}
+#     """
+#     headers = {
+#         "Authorization": f"Bearer {HF_API_TOKEN}",
+#         "Content-Type": "application/json"
+#     }
+
+#     response = requests.post(HF_MODEL_URL, headers=headers, json={"inputs": prompt})
+#     if response.status_code == 200:
+#         output = response.json()
+#         try:
+#             return json.loads(output[0]["generated_text"].split("```")[0])  # removes Markdown backticks
+#         except Exception as e:
+#             print("⚠️ Failed to parse structured response:", e)
+#             return output[0]["generated_text"]
+#     else:
+#         print("❌ Hugging Face API error:", response.text)
+#         return {"error": response.text}
+
+import re
+import json
+
 def structure_transcription(text):
-    """Call Hugging Face model to structure text into JSON"""
     prompt = f"""
     Extract structured information from this report and return as JSON:
     ---
@@ -82,22 +118,34 @@ def structure_transcription(text):
       "misc": []
     }}
     """
+
     headers = {
         "Authorization": f"Bearer {HF_API_TOKEN}",
         "Content-Type": "application/json"
     }
 
     response = requests.post(HF_MODEL_URL, headers=headers, json={"inputs": prompt})
+    
     if response.status_code == 200:
         output = response.json()
         try:
-            return json.loads(output[0]["generated_text"].split("```")[0])  # removes Markdown backticks
+            # ✅ Extract JSON block using regex (anything between { and })
+            match = re.search(r"\{[\s\S]*?\}", output[0]["generated_text"])
+            if match:
+                structured = json.loads(match.group())
+                print("📦 Structured Output (parsed JSON):", structured)
+                return structured
+            else:
+                print("⚠️ No JSON found in model response.")
+                return output[0]["generated_text"]
         except Exception as e:
             print("⚠️ Failed to parse structured response:", e)
+            print("📦 Structured Output (raw):", output[0]["generated_text"])
             return output[0]["generated_text"]
     else:
         print("❌ Hugging Face API error:", response.text)
         return {"error": response.text}
+
 
 # ========================
 # 🌐 WhatsApp Webhook

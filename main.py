@@ -100,55 +100,7 @@ def transcribe_with_whisper(file_path):
 #         return {"error": response.text}
 
 import re
-# import json
-
-# def structure_transcription(text):
-#     prompt = f"""
-#     Extract structured information from this report and return as JSON:
-#     ---
-#     Report: "{text}"
-#     ---
-#     Format:
-#     {{
-#       "agent_name": "",
-#       "store_or_location": "",
-#       "product_issues": [],
-#       "equipment_issues": [],
-#       "complaints_or_requests": [],
-#       "misc": []
-#     }}
-#     """
-
-#     headers = {
-#         "Authorization": f"Bearer {HF_API_TOKEN}",
-#         "Content-Type": "application/json"
-#     }
-
-#     response = requests.post(HF_MODEL_URL, headers=headers, json={"inputs": prompt})
-    
-#     if response.status_code == 200:
-#         output = response.json()
-#         try:
-#             # ✅ Extract JSON block using regex (anything between { and })
-#             match = re.search(r"\{[\s\S]*?\}", output[0]["generated_text"])
-#             if match:
-#                 structured = json.loads(match.group())
-#                 print("📦 Structured Output (parsed JSON):", structured)
-#                 return structured
-#             else:
-#                 print("⚠️ No JSON found in model response.")
-#                 return output[0]["generated_text"]
-#         except Exception as e:
-#             print("⚠️ Failed to parse structured response:", e)
-#             print("📦 Structured Output (raw):", output[0]["generated_text"])
-#             return output[0]["generated_text"]
-#     else:
-#         print("❌ Hugging Face API error:", response.text)
-#         return {"error": response.text}
-
 import json
-
-HF_MODEL_URL = "https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct"
 
 def structure_transcription(text):
     prompt = f"""
@@ -177,23 +129,75 @@ JSON:
     }
 
     response = requests.post(HF_MODEL_URL, headers=headers, json={"inputs": prompt})
-
+    
     if response.status_code == 200:
         output = response.json()
         try:
-            raw_text = output[0]["generated_text"]
-            json_start = raw_text.find("{")
-            json_data = raw_text[json_start:]
-            structured_output = json.loads(json_data)
-            print("📦 Structured Output (parsed JSON):", structured_output)
-            return structured_output
+            # ✅ Extract JSON block using regex (anything between { and })
+            match = re.search(r"\{[\s\S]*?\}", output[0]["generated_text"])
+            if match:
+                structured = json.loads(match.group())
+                print("📦 Structured Output (parsed JSON):", structured)
+                return structured
+            else:
+                print("⚠️ No JSON found in model response.")
+                return output[0]["generated_text"]
         except Exception as e:
             print("⚠️ Failed to parse structured response:", e)
-            print("📦 Structured Output:", raw_text)
-            return raw_text
+            print("📦 Structured Output (raw):", output[0]["generated_text"])
+            return output[0]["generated_text"]
     else:
         print("❌ Hugging Face API error:", response.text)
         return {"error": response.text}
+
+# import json
+
+# HF_MODEL_URL = "https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct"
+
+# def structure_transcription(text):
+#     prompt = f"""
+# Extract structured information from this report and return as JSON.
+
+# Example:
+# Report: "My name is Sarah. I am at AlFatah Store. They are out of detergent and their cash register is broken."
+# JSON:
+# {{
+#   "agent_name": "Sarah",
+#   "store_or_location": "AlFatah Store",
+#   "product_issues": ["out of detergent"],
+#   "equipment_issues": ["cash register is broken"],
+#   "complaints_or_requests": [],
+#   "misc": []
+# }}
+
+# Now extract for:
+# Report: "{text}"
+# JSON:
+# """
+
+#     headers = {
+#         "Authorization": f"Bearer {HF_API_TOKEN}",
+#         "Content-Type": "application/json"
+#     }
+
+#     response = requests.post(HF_MODEL_URL, headers=headers, json={"inputs": prompt})
+
+#     if response.status_code == 200:
+#         output = response.json()
+#         try:
+#             raw_text = output[0]["generated_text"]
+#             json_start = raw_text.find("{")
+#             json_data = raw_text[json_start:]
+#             structured_output = json.loads(json_data)
+#             print("📦 Structured Output (parsed JSON):", structured_output)
+#             return structured_output
+#         except Exception as e:
+#             print("⚠️ Failed to parse structured response:", e)
+#             print("📦 Structured Output:", raw_text)
+#             return raw_text
+#     else:
+#         print("❌ Hugging Face API error:", response.text)
+#         return {"error": response.text}
 
 
 
